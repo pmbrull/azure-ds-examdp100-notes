@@ -1,6 +1,4 @@
-# Get started with Machine Learning with an Azure Data Science Virtual Machine
-
-## Introduction to Data Science in Azure
+## Section
 
 <details>
 <summary> 
@@ -9,6 +7,7 @@ Show content
 <p>
 
 ### Learning Objectives
+
 
 
 ### Knowledge Check
