@@ -100,3 +100,121 @@ Some features or Azure ML pipelines are:
 
 ---
 
+## Train a local ML model with Azure Machine Learning service
+
+<details>
+<summary> 
+Show content
+</summary>
+<p>
+
+### Learning Objectives
+
+
+* Create a simple logistic model to recognize numbers in images from the MNIST dataset
+* Create a series of kNN models to find the one with the highest accuracy
+* Create an Azure Machine Learning experiment
+* Train a model by using the Azure Machine Learning service
+* Submit the model, monitor the run, and retrieve the results
+
+> As this is a rather practical module, you can refer to the labs notebooks or directly to Azure's docs.
+
+### What is HyperDrive
+
+HyperDrive is a built-in service that automatically launches multiple experiments in parallel each with different parameter configurations. Azure Machine Learning then automatically finds the configuration that results in the best performance measured by the metric you choose. The service will terminate poorly performing training runs to minimize compute resources usage.
+
+
+### Knowledge Check
+
+1. An Experiment contains which of the following?
+
+* A composition of a series of runs
+* A Docker image
+* The data used for model training
+
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    A composition of a series of runs: Azure ML Studio provides a visual drag and drop machine learning development portal but that is a separate offering.
+    </p>
+    </details>
+
+
+1. A run refers to which of the following?
+
+* Python code for a specific task such as training a model or tuning hyperparameters. Run does the job of logging metrics and uploading the results to Azure platform.
+* A set of containers managed by Kubertes to run your models.
+* A Spark cluster.
+
+
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    Python code for a specific task such as training a model or tuning hyperparameters. Run does the job of logging metrics and uploading the results to Azure platform. 
+    </p>
+    </details>
+
+
+1. A hyperparameter is which of the following?
+
+* A model parameter that cannot be learned by the model training process.
+* A model feature derived from the source data.
+* A parameter that automatically and frequently changes value during a single model training run.
+
+
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    Hyperparameters control how the model training executes and must be set before model training.
+    </p>
+    </details>
+
+
+1. Before you can train and run experiments in your code, you must do which of the following?
+
+* Create a virtual machine
+* Log out of the Azure portal
+* Write a model scoring script
+
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    Your Python script needs to connect to the Azure ML workspace before you can train and run experiments.
+    </p>
+    </details>
+
+
+1. Which of the following is a technique for determining hyperparameter values?
+
+* grid searching
+* Bayesian sampling
+* hyper searching
+
+
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    Grid searching is often used by data scientists to find the best hyperparamter value.
+    </p>
+    </details>
+
+
+</p>
+</details>
+
+---
