@@ -956,3 +956,636 @@ Show content
 <p>
 
 ### Learning objectives
+
+* Create an Azure Machine Learning pipeline.
+* Publish an Azure Machine Learning pipeline.
+* Schedule an Azure Machine Learning pipeline.
+
+### Introduction to pipelines
+
+A pipeline is a workflow of machine learning tasks in which each task is implemented as a step. Steps can be sequential or parallel and you can choose a specific compute target for them to run on.
+
+A pipeline can be executed as a process by running the pipeline as an experiment.
+
+They can be triggered via an scheduler or through a REST endpoint.
+
+#### Pipeline steps
+
+There are different types of steps:
+* **PythonScriptStep**: runs a specific python script.
+* **EstimatorStep**: runs an estimator.
+* **DataTransferStep**: Uses Azure Data Factory to copy data between data stores.
+* **DatabricksStep**: runs a notebook, script or compiled JAR on dbks.
+* **AdlaStep**: runs a U-SQL job in Azure Data Lake Analytics.
+
+You can find the full list [here](https://docs.microsoft.com/en-us/python/api/azureml-pipeline-steps/azureml.pipeline.steps?view=azure-ml-py).
+
+#### Defining steps in a pipeline
+
+First, you define the steps and then assemble the pipeline based on those:
+
+```python
+from azureml.pipeline.steps import PythonScriptStep, EstimatorStep
+
+# Step to run a Python script
+step1 = PythonScriptStep(name = 'prepare data',
+                         source_directory = 'scripts',
+                         script_name = 'data_prep.py',
+                         compute_target = 'aml-cluster',
+                         runconfig = run_config)
+
+# Step to run an estimator
+step2 = EstimatorStep(name = 'train model',
+                      estimator = sk_estimator,
+                      compute_target = 'aml-cluster')
+
+from azureml.pipeline.core import Pipeline
+from azureml.core import Experiment
+
+# Construct the pipeline
+train_pipeline = Pipeline(workspace = ws, steps = [step1,step2])
+
+# Create an experiment and run the pipeline
+experiment = Experiment(workspace = ws, name = 'training-pipeline')
+pipeline_run = experiment.submit(train_pipeline)
+```
+
+### Pass data between pipeline steps
+
+It is not unusual to have steps depending on previous steps' results.
+
+#### The PipelineData object
+
+The **PipelineData** object is a special kind of **DataReference** that:
+
+* References a location in a datastore.
+* Creates a data dependency between pipeline steps.
+
+It is an intermediary store between two subsequent steps: `step1 -> PipelineData -> step2`.
+
+#### PipelineData step inputs and outputs
+
+To use a **PipelineData** object you must:
+1. Define a named **PipelineData** object that references a location in a datastore.
+2. Configure the input / output of the steps that use it.
+3. Pass the **PipelineData** object as a script parameter in steps that run scripts (and add the `argparse` in those scripts, as we do with usual data refs).
+
+```python
+from azureml.pipeline.core import PipelineData
+from azureml.pipeline.steps import PythonScriptStep, EstimatorStep
+
+# Get a dataset for the initial data
+raw_ds = Dataset.get_by_name(ws, 'raw_dataset')
+
+# Define a PipelineData object to pass data between steps
+data_store = ws.get_default_datastore()
+prepped_data = PipelineData('prepped',  datastore=data_store)
+
+# Step to run a Python script
+step1 = PythonScriptStep(name = 'prepare data',
+                         source_directory = 'scripts',
+                         script_name = 'data_prep.py',
+                         compute_target = 'aml-cluster',
+                         runconfig = run_config,
+                         # Specify dataset as initial input
+                         inputs=[raw_ds.as_named_input('raw_data')],
+                         # Specify PipelineData as output
+                         outputs=[prepped_data],
+                         # Also pass as data reference to script
+                         arguments = ['--folder', prepped_data])
+
+# Step to run an estimator
+step2 = EstimatorStep(name = 'train model',
+                      estimator = sk_estimator,
+                      compute_target = 'aml-cluster',
+                      # Specify PipelineData as input
+                      inputs=[prepped_data],
+                      # Pass as data reference to estimator script
+                      estimator_entry_script_arguments=['--folder', prepped_data])
+```
+
+### Reuse pipeline steps
+
+AML includes some caching and reuse feature to reduce the time to run some steps.
+
+#### Managing step output reuse
+
+By default, the step output from a previous pipeline run is reused without rerunning the step. This is useful if the scripts, sources and directories have no change at all, otherwise this may lead to stale results.
+
+To control reuse for an individual step, you can use `allow_reuse` parameter:
+
+```python
+step1 = PythonScriptStep(name = 'prepare data',
+                         ...
+                         # Disable step reuse
+                         allow_reuse = False)
+```
+
+#### Forcing all steps to run
+
+You can force all steps to run regardless of individual reuse by setting the `regenerate_outputs` param at submision time:
+
+```python
+pipeline_run = experiment.submit(train_pipeline, regenerate_outputs=True)
+```
+
+### Publish pipelines
+
+After you have created a pipeline, you can publish it to create a REST endpoint through which the pipeline can be run on demand.
+
+```python
+published_pipeline = pipeline.publish(name='training_pipeline',
+                                      description='Model training pipeline',
+                                      version='1.0')
+```
+
+You can also publish the pipeline on a successful run:
+
+```python
+# Get the most recent run of the pipeline
+pipeline_experiment = ws.experiments.get('training-pipeline')
+run = list(pipeline_experiment.get_runs())[0]
+
+# Publish the pipeline from the run
+published_pipeline = run.publish_pipeline(name='training_pipeline',
+                                          description='Model training pipeline',
+                                          version='1.0')
+```
+
+To get the endpoint
+
+```python
+rest_endpoint = published_pipeline.endpoint
+print(rest_endpoint)
+```
+
+#### Using a published pipeline
+
+To use the endpoint, you need to get the token from a service principal with permission to run the pipeline.
+
+```python
+import requests
+
+response = requests.post(rest_endpoint,
+                         headers=auth_header,
+                         json={"ExperimentName": "run_training_pipeline"})
+run_id = response.json()["Id"]
+print(run_id)
+```
+
+### Use pipeline parameters
+
+To define parameters for a pipeline, create a **PipelineParameter** object for each parameter, and specify each parameter in at least one step.
+
+```python
+from azureml.pipeline.core.graph import PipelineParameter
+
+reg_param = PipelineParameter(name='reg_rate', default_value=0.01)
+
+...
+
+step2 = EstimatorStep(name = 'train model',
+                      estimator = sk_estimator,
+                      compute_target = 'aml-cluster',
+                      inputs=[prepped],
+                      estimator_entry_script_arguments=['--folder', prepped,
+                                                        '--reg', reg_param])
+```
+
+> OBS: You must define parameters for a pipeline before publishing it.
+
+#### Running a pipeline with a parameter
+
+After publishing a pipeline with a parameter, you can specify it in the JSON payload in the REST call:
+
+```python
+response = requests.post(rest_endpoint,
+                         headers=auth_header,
+                         json={"ExperimentName": "run_training_pipeline",
+                               "ParameterAssignments": {"reg_rate": 0.1}})
+```
+
+### Schedule pipelines
+
+#### Scheduling a pipeline for periodic intervals
+
+To schedule a pipeline to run at periodic intervals, you must define a **ScheduleRecurrance** that determines the run frequency, and use it to create a **Schedule**.
+
+```python
+from azureml.pipeline.core import ScheduleRecurrence, Schedule
+
+daily = ScheduleRecurrence(frequency='Day', interval=1)
+pipeline_schedule = Schedule.create(ws, name='Daily Training',
+                                        description='trains model every day',
+                                        pipeline_id=published_pipeline.id,
+                                        experiment_name='Training_Pipeline',
+                                        # daily schedule
+                                        recurrence=daily)
+```
+
+#### Triggering a pipeline run on data changes
+
+You can also monitor a specified path on a datastore. This will become a trigger for a new run.
+
+```python
+from azureml.core import Datastore
+from azureml.pipeline.core import Schedule
+
+training_datastore = Datastore(workspace=ws, name='blob_data')
+pipeline_schedule = Schedule.create(ws, name='Reactive Training',
+                                    description='trains model on data change',
+                                    pipeline_id=published_pipeline_id,
+                                    experiment_name='Training_Pipeline',
+                                    datastore=training_datastore,
+                                    path_on_datastore='data/training')
+```
+
+### Knowledge Check
+
+1. You're creating a pipeline that includes two steps. Step 1 preprocesses some data, and step 2 uses the preprocessed data to train a model. What type of object should you use to pass data from step 1 to step 2 and create a dependency between these steps?
+
+   * Datastore
+   * PipelineData
+   * Data Reference
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    To pass data between steps in a pipeline, use a PipelineData object.
+    </p>
+    </details>
+
+2. You've published a pipeline that you want to run every week. You plan to use the Schedule.create method to create the schedule. What kind of object must you create first to configure how frequently the pipeline runs?
+
+   * Datastore
+   * PipelineParameter
+   * ScheduleRecurrance
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    You need a ScheduleRecurrance object to create a schedule that runs at a regular interval.
+    </p>
+    </details>
+
+</p>
+</details>
+
+---
+
+## Deploying machine learning models with Azure Machine Learning
+
+<details>
+<summary> 
+Show content
+</summary>
+<p>
+
+### Learning objectives
+
+* Deploy a model as a real-time inferencing service.
+* Consume a real-time inferencing service.
+* Troubleshoot service deployment
+
+### Deploying a model as a real-time service
+
+You can deploy a model as a real-time web service to several kinds of compute target:
+* Local compute
+* Azure ML compute instance
+* Azure Container Instance (ACI)
+* AKS
+* Azure Function
+* IoT module
+
+AML uses containers for model packaging and deployment.
+
+#### 1. Register a trained model
+
+After a successful training, you first need to register the model.
+
+To register from a local file:
+
+```python
+from azureml.core import Model
+
+classification_model = Model.register(workspace=ws,
+                       model_name='classification_model',
+                       model_path='model.pkl', # local path
+                       description='A classification model')
+```
+
+Or to reference to the **Run** used to train the model:
+
+```python
+run.register_model( model_name='classification_model',
+                    model_path='outputs/model.pkl', # run outputs path
+                    description='A classification model')
+```
+
+#### 2. Define an Inference Configuration
+
+The model will be deployed as a service that consist of:
+
+* A script to load the model and return predictions for submitted data.
+* An environment in which the script will be run.
+
+##### Creating an Entry Script (or scoring script)
+
+It is a py file that must contain
+
+* `init()`: Called when the service is initialized.
+* `run(raw_data)`: Called when new data is submitted to the service.
+
+```python
+import json
+import joblib
+import numpy as np
+from azureml.core.model import Model
+
+# Called when the service is loaded
+def init():
+    global model
+    # Get the path to the registered model file and load it
+    model_path = Model.get_model_path('classification_model')
+    model = joblib.load(model_path)
+
+# Called when a request is received
+def run(raw_data):
+    # Get the input data as a numpy array
+    data = np.array(json.loads(raw_data)['data'])
+    # Get a prediction from the model
+    predictions = model.predict(data)
+    # Return the predictions as any JSON serializable format
+    return predictions.tolist()
+```
+
+##### Creating an Environment
+
+You can use **CondaDependencies**
+
+```python
+from azureml.core.conda_dependencies import CondaDependencies
+
+# Add the dependencies for your model
+myenv = CondaDependencies()
+myenv.add_conda_package("scikit-learn")
+
+# Save the environment config as a .yml file
+env_file = 'service_files/env.yml'
+with open(env_file,"w") as f:
+    f.write(myenv.serialize_to_string())
+print("Saved dependency info in", env_file)
+```
+
+##### Combining the Script and Environment in an InferenceConfig
+
+```python
+from azureml.core.model import InferenceConfig
+
+classifier_inference_config = InferenceConfig(runtime= "python",
+                                              source_directory = 'service_files',
+                                              entry_script="score.py",
+                                              conda_file="env.yml")
+```
+
+#### 3. Define a Deployment Configuration
+
+Now, select the compute target to deploy to.
+
+> OBS: if deploying to AKS, create the cluster and a compute target for it before deploying.
+
+```python
+from azureml.core.compute import ComputeTarget, AksCompute
+
+cluster_name = 'aks-cluster'
+compute_config = AksCompute.provisioning_configuration(location='eastus')
+production_cluster = ComputeTarget.create(ws, cluster_name, compute_config)
+production_cluster.wait_for_completion(show_output=True)
+```
+
+With the compute target created, define the deployment config
+
+```python
+from azureml.core.webservice import AksWebservice
+
+classifier_deploy_config = AksWebservice.deploy_configuration(cpu_cores = 1,
+                                                              memory_gb = 1)
+```
+
+The code to configure an ACI deployment is similar, except that you do not need to explicitly create an ACI compute target, and you must use the deploy_configuration class from the **azureml.core.webservice.AciWebservice** namespace. Similarly, you can use the **azureml.core.webservice.LocalWebservice** namespace to configure a local Docker-based service.
+
+#### 4. Deploy the Model
+
+```python
+from azureml.core.model import Model
+
+model = ws.models['classification_model']
+service = Model.deploy(workspace=ws,
+                       name = 'classifier-service',
+                       models = [model],
+                       inference_config = classifier_inference_config,
+                       deployment_config = classifier_deploy_config,
+                       deployment_target = production_cluster)
+service.wait_for_deployment(show_output = True)
+```
+
+For ACI or local services, you can omit the deployment_target parameter (or set it to None).
+
+### Consuming a real-time inferencing service
+
+#### Using the Azure Machine Learning SDK
+
+For testing, you can use the AML SDK
+
+```python
+import json
+
+# An array of new data cases
+x_new = [[0.1,2.3,4.1,2.0],
+         [0.2,1.8,3.9,2.1]]
+
+# Convert the array to a serializable list in a JSON document
+json_data = json.dumps({"data": x_new})
+
+# Call the web service, passing the input data
+response = service.run(input_data = json_data)
+
+# Get the predictions
+predictions = json.loads(response)
+
+# Print the predicted class for each case.
+for i in range(len(x_new)):
+    print (x_new[i]), predictions[i] )
+```
+
+#### Using a REST Endpoint
+
+You can retrieve the service endpoint via the UI or the SDK:
+
+```python
+endpoint = service.scoring_uri
+print(endpoint)
+```
+
+```python
+import requests
+import json
+
+# An array of new data cases
+x_new = [[0.1,2.3,4.1,2.0],
+         [0.2,1.8,3.9,2.1]]
+
+# Convert the array to a serializable list in a JSON document
+json_data = json.dumps({"data": x_new})
+
+# Set the content type in the request headers
+request_headers = { 'Content-Type':'application/json' }
+
+# Call the service
+response = requests.post(url = endpoint,
+                         data = json_data,
+                         headers = request_headers)
+
+# Get the predictions from the JSON response
+predictions = json.loads(response.json())
+
+# Print the predicted class for each case.
+for i in range(len(x_new)):
+    print (x_new[i]), predictions[i] )
+```
+
+#### Authentication
+
+There are two kinds of auth
+
+* **Key**: Requests are authenticated by specifying the key associated with the service.
+* **Token**: Requests are authenticated by providing a JSON Web Token (JWT).
+
+> OBS: By default, authentication is disabled for ACI services, and set to key-based authentication for AKS services (for which primary and secondary keys are automatically generated). You can optionally configure an AKS service to use token-based authentication (which is not supported for ACI services).
+
+You can retrieve the keys for a **WebService** as
+
+```python
+primary_key, secondary_key = service.get_keys()
+```
+
+To use a token, the application needs to use a service-principal auth to verity the identity through AAD and call the **get_token** method to create a time-limited token.
+
+```python
+import requests
+import json
+
+# An array of new data cases
+x_new = [[0.1,2.3,4.1,2.0],
+         [0.2,1.8,3.9,2.1]]
+
+# Convert the array to a serializable list in a JSON document
+json_data = json.dumps({"data": x_new})
+
+# Set the content type in the request headers
+request_headers = { "Content-Type":"application/json",
+                    "Authorization":"Bearer " + key_or_token }
+
+# Call the service
+response = requests.post(url = endpoint,
+                         data = json_data,
+                         headers = request_headers)
+
+# Get the predictions from the JSON response
+predictions = json.loads(response.json())
+
+# Print the predicted class for each case.
+for i in range(len(x_new)):
+    print (x_new[i]), predictions[i] )
+```
+
+### Troubleshooting service deployment
+
+#### Check the Service State
+
+```python
+from azureml.core.webservice import AksWebservice
+
+# Get the deployed service
+service = AciWebservice(name='classifier-service', workspace=ws)
+
+# Check its state
+print(service.state)
+```
+
+> OBS: To view the state of a service, you must use the compute-specific service type (for example AksWebservice) and not a generic WebService object.
+
+#### Review Service Logs
+
+```python
+print(service.get_logs())
+```
+
+#### Deploy to a Local Container
+
+A quick check on runtime errors can be done by deploying to a local container.
+
+```python
+from azureml.core.webservice import LocalWebservice
+
+deployment_config = LocalWebservice.deploy_configuration(port=8890)
+service = Model.deploy(ws, 'test-svc', [model], inference_config, deployment_config)
+```
+
+You can then test the locally deployed service using the SDK `service.run(input_data = json_data)` and troubleshoot runtime issues by making changes to the scoring file and reloading the service without redeploying (this can ONLY be done with a local service)
+
+```python
+service.reload()
+print(service.run(input_data = json_data))
+```
+
+### Check your knowledge
+
+1. You've trained a model using the Python SDK for Azure Machine Learning. You want to deploy the model as a containerized real-time service with high scalability and security. What kind of compute should you create to host the service?
+
+    * An Azure Kubernetes Services (AKS) inferencing cluster.
+    * A compute instance with GPUs.
+    * A training cluster with multiple nodes.
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    You should use an AKS cluster to deploy a model as a scalable, secure, containerized service.
+    </p>
+    </details>
+
+2. You're deploying a model as a real-time inferencing service. What functions must the entry script for the service include?
+
+    * main() and score()
+    * base() and train()
+    * init() and run()
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    You must implement init and run functions in the entry (scoring) script.
+    </p>
+    </details>
+
+</p>
+</details>
+
+---
+
+## Automate machine learning model selection with Azure Machine Learning
+
+<details>
+<summary> 
+Show content
+</summary>
+<p>
+
+### Learning objectives
