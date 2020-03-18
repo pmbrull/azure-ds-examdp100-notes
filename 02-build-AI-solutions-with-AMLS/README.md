@@ -490,6 +490,8 @@ ws.set_default_datastore('blob_data')
 
 You can interact directly with a datastore via the SDK and *pass data references* to scripts that need to access data.
 
+> OBS: For blobs to work correctly as a datastore and be accessible in the code to upload / download, the storage account should be Standard / Hot, not Premium!
+
 #### Working directly with a datastore
 
 ```python
