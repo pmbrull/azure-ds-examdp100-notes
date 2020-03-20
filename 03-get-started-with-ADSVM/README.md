@@ -161,6 +161,12 @@ Examples of Geo AI include:
 
 ## Provision and use an Azure Data Science Virtual Machine
 
+<details>
+<summary> 
+Show content
+</summary>
+<p>
+
 This module is based on exercise, so it's best followed [here](https://docs.microsoft.com/en-us/learn/modules/provision-and-use-azure-dsvm/).
 
 ### Knowledge Check
