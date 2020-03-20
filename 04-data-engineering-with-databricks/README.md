@@ -1,6 +1,6 @@
-# Get started with Machine Learning with an Azure Data Science Virtual Machine
+# Data Engineering with Databricks
 
-## Introduction to the Azure Data Science Virtual Machine
+##
 
 <details>
 <summary> 
