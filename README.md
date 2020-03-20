@@ -7,3 +7,7 @@ Some useful links:
 * [Exam requirements infographic](https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RE2PLKZ)
 * [DP-100 Labs](https://github.com/MicrosoftLearning/DP-100-Designing-and-Implementing-a-Data-Science-Solutio)
 * [Azure ML service example notebooks](https://github.com/Azure/MachineLearningNotebooks)
+
+Study guide:
+* [Data Concepts](https://medium.com/deep-ai/all-you-need-to-know-about-data-for-machine-learning-a80bc8555d58)
+* [Study Guide](https://medium.com/deep-ai/study-guide-for-microsoft-azure-data-scientist-associate-certification-dp-100-c2e4611cb071)

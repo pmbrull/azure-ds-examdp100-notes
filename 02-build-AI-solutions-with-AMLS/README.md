@@ -1543,7 +1543,7 @@ service.reload()
 print(service.run(input_data = json_data))
 ```
 
-### Check your knowledge
+### Knowledge Check
 
 1. You've trained a model using the Python SDK for Azure Machine Learning. You want to deploy the model as a containerized real-time service with high scalability and security. What kind of compute should you create to host the service?
 
@@ -1589,3 +1589,143 @@ Show content
 <p>
 
 ### Learning objectives
+
+> OBS: Azure Machine Learning includes support for automated machine learning through a visual interface in Azure Machine Learning studio for Enterprise edition workspaces only. SDK is enabled in both Basic and Enterprise.
+
+* Use Azure Machine Learning's automated machine learning capabilities to determine the best performing algorithm for your data.
+* Use automated machine learning to preprocess data for training.
+* Run an automated machine learning experiment.
+
+### Automated machine learning tasks and algorithms
+
+You can automate classification, regression and time series forecasting.
+
+There is a huge [list](https://docs.microsoft.com/en-us/azure/machine-learning/how-to-define-task-type) of supporting algorithms for each task. By default, automated ML will randomly select from the full range of algorithms, but you can block individual algorithms.
+
+### Preprocessing and featurization
+
+As well as trying the algorithms, automated ML can also apply preprocessing to the data to improve the performance.
+
+* **Scaling and Normalization**: they are applied automatically to prevent any large numeric feature to dominate the taining.
+* **Optional Featurization**: You can choose to apply preprocessing such as:
+  * Missing value imputation
+  * Categorical encoding
+  * Dropping high cardinality features (as IDs)
+  * Feature engineering (e.g., deriving individual date parts from DateTime features)
+
+More information [here](https://docs.microsoft.com/en-us/azure/machine-learning/concept-automated-ml#preprocessing).
+
+### Running automated machine learning experiments
+
+You can use the UI (Enterprise) or the SDK.
+
+#### Configuring an Automated Machine Learning Experiment
+
+With the SDK you have greater flexibility and you can set experiment options using the **AutoMLConfig** class:
+
+```python
+from azureml.train.automl import AutoMLConfig
+
+automl_run_config = RunConfiguration(framework='python')
+automl_config = AutoMLConfig(name='Automated ML Experiment',
+                             task='classification',
+                             primary_metric = 'AUC_weighted',
+                             compute_target=aml_compute,
+                             training_data = train_dataset,
+                             validation_data = test_dataset,
+                             label_column_name='Label',
+                             featurization='auto',
+                             iterations=12,
+                             max_concurrent_iterations=4)
+```
+
+#### Specifying Data for Training
+
+With the UI, you can just select the training **dataset**. With the SDK, you can submit the data in the following ways:
+* Specify a dataset or dataframe of training data that includes features and the label to be predicted.
+* Specify a dataset, dataframe, or numpy array of X values containing the training features, with a corresponding y array of label values.
+
+For both cases, you can optionally specify a validation dataset that will be used to validate the model. If it is not provided, Cross-Validation will be applied.
+
+#### Specifying the Primary Metric
+
+One of the most important settings. You can get all the metrics for a particular task as follows:
+
+```python
+from azureml.train.automl.utilities import get_primary_metrics
+
+get_primary_metrics('classification')
+```
+
+You can find a full list of primary metrics [here](https://docs.microsoft.com/en-us/azure/machine-learning/how-to-understand-automated-ml).
+
+#### Submitting an Automated Machine Learning Experiment
+
+Automated ML experiments are submitted as any other experiment with the SDK:
+
+```python
+from azureml.core.experiment import Experiment
+
+automl_experiment = Experiment(ws, 'automl_experiment')
+automl_run = automl_experiment.submit(automl_config)
+```
+
+You can monitor the runs in AML Studio or in the Jupyter Notebooks **RunDetails** widget.
+
+#### Retrieving the Best Run and its Model
+
+```python
+best_run, fitted_model = automl_run.get_output()
+best_run_metrics = best_run.get_metrics()
+for metric_name in best_run_metrics:
+    metric = best_run_metrics[metric_name]
+    print(metric_name, metric)
+```
+
+#### Exploring Preprocessing Steps
+
+AutoML uses SKlearn pipelines to encapsulate the processing steps. You view those steps in the fittedmodel obtained from the best run as shown below:
+
+```python
+for step_ in fitted_model.named_steps:
+    print(step)
+```
+
+### Knowledge Check
+
+1. You are using automated machine learning to train a model that predicts the species of an iris based on its petal and sepal measurements. Which kind of task should you specify for automated machine learning?
+
+
+    * Regression
+    * Forecasting
+    * Classification
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    Predicting a class requires a classification task.
+    </p>
+    </details>
+
+2. You have submitted an automated machine learning run using the Python SDk for Azure Machine Learning. When the run completes, which method of the run object should you use to retrieve the best model?
+
+
+    * get_output()
+    * load_model()
+    * get_metrics()
+
+    <details>
+    <summary> 
+    Answer
+    </summary>
+    <p>
+    The get_output method of an automated machine learning run returns the best mode and the child run that trained it.
+    </p>
+    </details>
+
+</p>
+</details>
+
+---
